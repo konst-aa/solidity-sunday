@@ -1,20 +1,13 @@
-const ethers = require('ethers');
+const helpers = require("../js-helpers/ether-wrappers");
 
 const testBallot = artifacts.require("TestBallot.sol");
-
-function createBytes(string) {
-    return ethers.utils.formatBytes32String(string);
-}
-function parseBytes(bytes) {
-    return ethers.utils.parseBytes32String(bytes);
-}
 
 contract('Ballot', (accounts) => {
     let ballotInstance;
     before(async () => {
         proposals = ["apples", "cats", "dogs"];
         ballotInstance = await testBallot.new(proposals.map((element) => {
-            return createBytes(element);
+            return helpers.createBytes(element);
         }));
     });
     it("initialized properly", async () => {;
@@ -24,7 +17,7 @@ contract('Ballot', (accounts) => {
         for (let i = 0; i < proposalNames.length; i++) {
             proposalName = proposalNames[i];
             proposal = proposals[i];
-            assert.equal(parseBytes(proposal.name), proposalName, "names converted right");
+            assert.equal(helpers.parseBytes(proposal.name), proposalName, "names converted right");
             assert.equal(proposal.voteCount, 0, "all start with 0 votes");
         }
     });

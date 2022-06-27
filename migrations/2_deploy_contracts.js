@@ -1,17 +1,10 @@
-const ethers = require('ethers');
+const helpers = require("../js-helpers/ether-wrappers");
 
 var HelloWorld = artifacts.require("HelloWorld.sol");
 var Ballot = artifacts.require("Ballot.sol");
 
 let b = ["apples", "cats", "dogs"]
-b = b.map((element) => { return createBytes(element); });
-
-function createBytes(string) {
-    return ethers.utils.formatBytes32String(string);
-}
-function parseBytes(bytes) {
-    return ethers.utils.parseBytes32String(bytes)
-}
+b = b.map((element) => { return helpers.createBytes(element); });
 
 module.exports = function (deployer) {
     deployer.deploy(Ballot, b)
