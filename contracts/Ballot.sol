@@ -26,13 +26,20 @@ contract Ballot {
     // stores a `Voter` struct for each possible address.
     mapping(address => Voter) public voters;
 
+    // a special list for tiebreakers, to be broken by the chairperson.
+    uint256[] public tied;
+
+    bool public locked;
     // A dynamically-sized array of `Proposal` structs.
     Proposal[] public proposals;
+
+    uint256 public winnerIndex;
 
     /// Create a new ballot to choose one of `proposalNames`.
     constructor(bytes32[] memory proposalNames) {
         chairperson = msg.sender;
         voters[chairperson].weight = 1;
+        locked = false;
 
         // For each of the provided proposal names,
         // create a new proposal object and add it
@@ -62,7 +69,8 @@ contract Ballot {
     }
 
     // Implementation of the possible improvement mentioned in the solidity docs
-    function giveRightToVote(address[] memory pendingVoters) external {
+    function giveRightToMany(address[] memory pendingVoters) external {
+        // I'd want this to yield failed assignments so as to not waste gas
         for (uint256 i = 0; i < pendingVoters.length; i++) {
             address voter = pendingVoters[i];
             rightToVoteCheck(voter);
@@ -74,9 +82,13 @@ contract Ballot {
     function delegate(address to) external {
         // assigns reference
         Voter storage sender = voters[msg.sender];
+        require(msg.sender != chairperson, "chairperson can't delegate");
+        require(
+            to != chairperson,
+            "chairperson's vote is only for breaking ties."
+        );
         require(sender.weight != 0, "You have no right to vote");
         require(!sender.voted, "You already voted.");
-
         require(to != msg.sender, "Self-delegation is disallowed.");
 
         // Forward the delegation as long as
@@ -119,33 +131,69 @@ contract Ballot {
     /// to proposal `proposals[proposal].name`.
     function vote(uint256 proposal) external {
         Voter storage sender = voters[msg.sender];
-        require(sender.weight != 0, "Has no right to vote");
         require(!sender.voted, "Already voted.");
-        sender.voted = true;
-        sender.vote = proposal;
+        require(sender.weight != 0, "Has no right to vote");
+        if (msg.sender == chairperson) {
+            require(
+                locked,
+                "Chairperson must vote last, if at all. Voting must be locked."
+            );
+            require(tied.length != 1, "Can only vote to break ties.");
+            bool contains = false;
+            for (uint256 i = 0; i < tied.length; i++) {
+                if (proposal == tied[i]) {
+                    contains = true;
+                    break;
+                }
+            }
+            require(contains, "Must vote for a proposal that's tied.");
 
-        // If `proposal` is out of the range of the array,
-        // this will throw automatically and revert all
-        // changes.
-        proposals[proposal].voteCount += sender.weight;
+            // updates the ties
+            delete tied;
+            tied.push(proposal);
+        } else {
+            require(!locked, "Voting winner already declared!");
+            sender.voted = true;
+            sender.vote = proposal;
+
+            // If `proposal` is out of the range of the array,
+            // this will throw automatically and revert all
+            // changes.
+            proposals[proposal].voteCount += sender.weight;
+        }
     }
 
     /// @dev Computes the winning proposal taking all
     /// previous votes into account.
-    function winningProposal() public view returns (uint256 winningProposal_) {
+    function lock() external {
+        require(
+            msg.sender == chairperson,
+            "Only the chairperson can stop the voting."
+        );
+        locked = true;
         uint256 winningVoteCount = 0;
-        for (uint256 p = 0; p < proposals.length; p++) {
+        for (uint256 p = 0; p < 3; p++) {
             if (proposals[p].voteCount > winningVoteCount) {
                 winningVoteCount = proposals[p].voteCount;
-                winningProposal_ = p;
+                delete tied;
+                tied.push(p);
+            } else if (proposals[p].voteCount == winningVoteCount) {
+                tied.push(p);
             }
         }
+        if (tied.length == 1) {
+            winnerIndex = tied[0];
+        }
+        // otherwise we're going to have to wait for the chairperson to break the tie.
     }
 
     // Calls winningProposal() function to get the index
     // of the winner contained in the proposals array and then
     // returns the name of the winner
     function winnerName() external view returns (bytes32 winnerName_) {
-        winnerName_ = proposals[winningProposal()].name;
+        require(locked, "Voting isn't over");
+        require(tied.length == 1, "Ties not yet broken");
+
+        winnerName_ = proposals[winnerIndex].name;
     }
 }
